@@ -105,22 +105,32 @@ def autoets(data, origin, train_days):
 
 # Prediction intervals: 95th percentile of absolute CV errors per (forecast day, daylight flag)
 
-def calibrate_halfwidths(y, daylight, origins, predictions, level=0.95):
-    """Return {(day_part, daylight_flag): half_width} from CV errors of one model."""
+def recent_level(y, origin, days=7):
+    """Mean of y over the days before origin; used to rescale interval widths."""
+    return float(np.mean(y[origin - days * DAY : origin]))
+
+
+def calibrate_halfwidths(y, daylight, origins, predictions, level=0.95, level_days=None):
+    """Return {(day_part, daylight_flag): half_width} from CV errors of one model.
+
+    With level_days, errors are divided by recent_level at each origin, so the
+    half-widths are fractions of the level and must be rescaled in interval().
+    """
     widths = {}
     for part in DAY_PARTS:
         sl = PARTS[part]
         for flag in (0, 1):
             errors = np.concatenate([
-                np.abs(y[o : o + H][sl] - predictions[o][sl])[daylight[o : o + H][sl] == flag]
+                (np.abs(y[o : o + H][sl] - predictions[o][sl])
+                 / (recent_level(y, o, level_days) if level_days else 1.0))[daylight[o : o + H][sl] == flag]
                 for o in origins
             ])
             widths[(part, flag)] = float(np.quantile(errors, level, method='higher'))
     return widths
 
 
-def interval(point, target_daylight, widths):
-    half = np.array([
+def interval(point, target_daylight, widths, scale=1.0):
+    half = scale * np.array([
         widths[(DAY_PARTS[step // DAY], int(flag))]
         for step, flag in enumerate(target_daylight)
     ])
