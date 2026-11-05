@@ -32,6 +32,11 @@ def load_timestral(model_id=MODEL_ID, device=None):
     return TimestralForecaster.from_pretrained(model_id, device=device)
 
 
+def to_numpy(x):
+    """Forecast outputs are torch tensors on the model's device (GPU on Colab)."""
+    return x.detach().cpu().numpy() if hasattr(x, 'detach') else np.asarray(x)
+
+
 def quantile_at(quantiles, levels, level):
     """Linear interpolation between the model's 21 quantile levels (0.025 is not one of them)."""
     return np.apply_along_axis(lambda row: np.interp(level, levels, row), -1, quantiles)
@@ -61,9 +66,9 @@ def timestral_forecast(model, data, origins, context_days, covariates=WEATHER_CO
         kwargs['known_covariates'] = np.stack(known)
 
     forecast = model.forecast(context, prediction_length=H, **kwargs)
-    quantiles = np.asarray(forecast.quantiles)[:, 0]  # (origins, H, 21)
-    levels = np.asarray(forecast.quantile_levels, dtype=float)
-    median = np.asarray(forecast.median)[:, 0]
+    quantiles = to_numpy(forecast.quantiles)[:, 0]  # (origins, H, 21)
+    levels = to_numpy(forecast.quantile_levels).astype(float)
+    median = to_numpy(forecast.median)[:, 0]
     lower = quantile_at(quantiles, levels, (1 - level) / 2)
     upper = quantile_at(quantiles, levels, (1 + level) / 2)
     return {
